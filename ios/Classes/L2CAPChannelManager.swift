@@ -73,9 +73,6 @@ public class L2CAPChannelManager {
             })
             channels[thisCID] = chan
 
-            channel.inputStream.open()
-            channel.outputStream.open()
-
             return thisCID
         }
     }

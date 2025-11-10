@@ -27,8 +27,22 @@ extension OutputStream {
     func write(_ data: Data) -> Int {
         return data.withUnsafeBytes({ (rawBufferPointer: UnsafeRawBufferPointer) -> Int in
             let bufferPointer = rawBufferPointer.bindMemory(to: UInt8.self)
-            // This force unwrap is okay
-            return Int(self.write(bufferPointer.baseAddress!, maxLength: data.count))
+            guard let baseAddress = bufferPointer.baseAddress else {
+                return -1
+            }
+            var totalWritten = 0
+            while totalWritten < bufferPointer.count {
+                let bytesWritten = self.write(
+                    baseAddress.advanced(by: totalWritten), maxLength: bufferPointer.count - totalWritten)
+                if bytesWritten < 0 {
+                    return -1
+                }
+                if bytesWritten == 0 {
+                    return -1
+                }
+                totalWritten += bytesWritten
+            }
+            return totalWritten
         })
     }
 }
