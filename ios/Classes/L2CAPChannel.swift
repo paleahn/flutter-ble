@@ -150,7 +150,10 @@ public class L2CAPChannel: NSObject, StreamDelegate {
             return
         }
 
-        let outputStream = channel.outputStream
+        guard let outputStream = channel.outputStream else {
+            handleStreamError(RuntimeError("output stream unavailable"))
+            return
+        }
         var flushedThisCycle = 0
         while outputStream.hasSpaceAvailable && pendingWriteOffset < data.count {
             if flushedThisCycle >= maxWriteBytesPerCycle {
@@ -209,7 +212,10 @@ public class L2CAPChannel: NSObject, StreamDelegate {
     }
 
     private func accumulateAvailableBytes() {
-        let inputStream = channel.inputStream
+        guard let inputStream = channel.inputStream else {
+            handleStreamError(RuntimeError("input stream unavailable"))
+            return
+        }
         while inputStream.hasBytesAvailable {
             let bytesRead = readScratchBuffer.withUnsafeMutableBytes { rawBufferPointer -> Int in
                 let bufferPointer = rawBufferPointer.bindMemory(to: UInt8.self)
