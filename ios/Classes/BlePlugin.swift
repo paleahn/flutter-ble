@@ -128,7 +128,13 @@ public class BlePlugin: NSObject, FlutterPlugin {
                 }
                 flutterMethodCallHandler(
                     methodName: call.method,
-                    call: { [weak chan] in try await chan?.write(data: data.data) }, result: result)
+                    call: { [weak chan] in
+                        guard let chan else {
+                            throw RuntimeError("channel deallocated")
+                        }
+                        try await chan.write(data: data.data)
+                        return data.data.count
+                    }, result: result)
             } else {
                 throwInvalidArguments(call, result)
             }
@@ -281,7 +287,13 @@ public class BlePlugin: NSObject, FlutterPlugin {
                 }
                 flutterMethodCallHandler(
                     methodName: call.method,
-                    call: { [weak chan] in return try await chan?.write(data: data.data) }, result: result)
+                    call: { [weak chan] in
+                        guard let chan else {
+                            throw RuntimeError("channel deallocated")
+                        }
+                        try await chan.write(data: data.data)
+                        return data.data.count
+                    }, result: result)
             } else {
                 throwInvalidArguments(call, result)
             }
