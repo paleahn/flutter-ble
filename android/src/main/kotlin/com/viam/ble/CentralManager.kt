@@ -91,13 +91,18 @@ class CentralManager(
                 }
                 lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
-                btMan.adapter.bluetoothLeScanner.startScan(
+                val scanFilters = if (serviceIds.isEmpty()) {
+                    null
+                } else {
                     serviceIds.map {
                         ScanFilter
                             .Builder()
                             .setServiceUuid(ParcelUuid.fromString(it))
                             .build()
-                    },
+                    }
+                }
+                btMan.adapter.bluetoothLeScanner.startScan(
+                    scanFilters,
                     ScanSettings.Builder().build(),
                     leScanCallback,
                 )
