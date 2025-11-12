@@ -92,7 +92,6 @@ class CentralManager(
                 lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
                 try {
-                    private val mainHandler = Handler(Looper.getMainLooper())
                     scanner.startScan(
                         if (serviceIds.isEmpty()) null else serviceIds.map {
                                 ScanFilter
@@ -105,8 +104,7 @@ class CentralManager(
                             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
                             .setReportDelay(0)
                             .build(),
-                        leScanCallback,
-                        mainHandler
+                        leScanCallback
                     )
                 } catch (e: Exception) {
                     isScanning = false
