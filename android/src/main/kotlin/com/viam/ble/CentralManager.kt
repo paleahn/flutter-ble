@@ -101,11 +101,23 @@ class CentralManager(
                             .build()
                     }
                 }
-                btMan.adapter.bluetoothLeScanner.startScan(
-                    scanFilters,
-                    ScanSettings.Builder().build(),
-                    leScanCallback,
-                )
+                
+                try {
+                    btMan.adapter.bluetoothLeScanner.startScan(
+                        scanFilters,
+                        ScanSettings.Builder()
+                            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                            .setReportDelay(0)
+                            .build(),
+                        leScanCallback,
+                    )
+                    Log.d(TAG, "BLE scan started successfully")
+                } catch (e: Exception) {
+                    isScanning = false
+                    Log.e(TAG, "Failed to start BLE scan", e)
+                    throw e
+                }
             }
         }
     }
@@ -189,22 +201,37 @@ class CentralManager(
                 result: ScanResult,
             ) {
                 super.onScanResult(callbackType, result)
+                Log.d(TAG, "onScanResult: device=${result.device?.address} name=${result.device?.name}")
                 CoroutineScope(Dispatchers.IO).launch {
-                    _scanForPeripheralFlow.emit(
-                        Result.success(
-                            hashMapOf(
-                                "id" to result.device.address,
-                                "name" to result.device.name,
-                                "service_ids" to result.device.uuids?.map { toString() },
+                    try {
+                        _scanForPeripheralFlow.emit(
+                            Result.success(
+                                hashMapOf(
+                                    "id" to result.device.address,
+                                    "name" to (result.device.name ?: "Unknown"),
+                                    "service_ids" to (result.device.uuids?.map { it.toString() } ?: emptyList()),
+                                ),
                             ),
-                        ),
-                    )
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error emitting scan result", e)
+                        _scanForPeripheralFlow.emit(Result.failure(e))
+                    }
                 }
+            }
+
+            override fun onBatchScanResults(results: List<ScanResult>) {
+                super.onBatchScanResults(results)
+                Log.d(TAG, "onBatchScanResults: ${results.size} results")
+                results.forEach { onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, it) }
             }
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "onScanFailed $errorCode")
                 CoroutineScope(Dispatchers.IO).launch {
+                    scanMutex.withLock {
+                        isScanning = false
+                    }
                     _scanForPeripheralFlow.emit(Result.failure(Exception("scan failed: $errorCode")))
                 }
             }
