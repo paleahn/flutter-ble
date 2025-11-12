@@ -91,33 +91,33 @@ class CentralManager(
                 }
                 lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
-                val scanFilters = if (serviceIds.isEmpty()) {
-                    null
-                } else {
-                    serviceIds.map {
-                        ScanFilter
-                            .Builder()
-                            .setServiceUuid(ParcelUuid.fromString(it))
-                            .build()
-                    }
-                }
-                
                 try {
-                    btMan.adapter.bluetoothLeScanner.startScan(
-                        scanFilters,
-                        ScanSettings.Builder()
-                            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-                            .setReportDelay(0)
-                            .build(),
-                        leScanCallback,
-                    )
-                    Log.d(TAG, "BLE scan started successfully")
+                    if (serviceIds.isEmpty()) {
+                        btMan.adapter.bluetoothLeScanner.startScan(
+                            leScanCallback,
+                        )
+                    } else {
+                        btMan.adapter.bluetoothLeScanner.startScan(
+                            serviceIds.map {
+                                ScanFilter
+                                    .Builder()
+                                    .setServiceUuid(ParcelUuid.fromString(it))
+                                    .build()
+                            },
+                            ScanSettings.Builder()
+                                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                                .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                                .setReportDelay(0)
+                                .build(),
+                            leScanCallback,
+                        )
+                    }
                 } catch (e: Exception) {
                     isScanning = false
                     Log.e(TAG, "Failed to start BLE scan", e)
                     throw e
                 }
+                Log.d(TAG, "BLE scan started successfully")
             }
         }
     }
