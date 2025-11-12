@@ -92,7 +92,7 @@ class CentralManager(
                 lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
                 try {
-                    scanner.startScan(
+                    btMan.adapter.bluetoothLeScanner.startScan(
                         if (serviceIds.isEmpty()) null else serviceIds.map {
                                 ScanFilter
                                     .Builder()
