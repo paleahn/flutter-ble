@@ -62,82 +62,13 @@ class CentralManager(
                 // to connect to it in order to check out its services. We'll disconnect if it's
                 // of no use to us.
                 excludeFromScan.clear()
-                btMan.adapter.bondedDevices.forEach { device ->
-                    excludeFromScan.add(device.address)
-                    CoroutineScope(Dispatchers.IO).launch {
-                        for (i in 1..3) {
-                            try {
-                                Log.d(
-                                    TAG,
-                                    "connecting to bonded device ${device.name} ${device.address} to see if it has desired service(s)",
-                                )
-                                val connectedDevice = connectToDevice(device.address)
-                                val connectedDeviceServiceIds = connectedDevice.map { it["id"] as String }
-                                if (connectedDeviceServiceIds.intersect(serviceIds.map(String::lowercase).toSet()).isNotEmpty()) {
-                                    Log.d(TAG, "bonded device ${device.name} ${device.address} contains a desired service id")
-                                    _scanForPeripheralFlow.emit(
-                                        Result.success(
-                                            hashMapOf(
-                                                "id" to device.address,
-                                                "name" to device.name,
-                                                "service_ids" to device.uuids?.map { toString() },
-                                            ),
-                                        ),
-                                    )
-                                    break
-                                } else {
-                                    Log.d(TAG, "bonded device ${device.name} ${device.address} is not useful to us")
-                                    disconnectFromDevice(device.address)
-                                }
-                            } catch (e: Throwable) {
-                                when(e) {
-                                    // time outs can be caused by a multitude of reasons, including if the bonded device is off.
-                                    // for that reason, only report stack traces if the exception is not a time out.
-                                    is TimeoutException -> {
-                                        Log.d(TAG, "timed out trying to connect to bonded device ${device.name} ${device.address}")
-                                    }
-                                    else -> Log.d(TAG, "failed to connect to bonded device ${device.name} ${device.address}", e)
-                                }
-                            }
-                            delay(5000)
-                        }
-                    }
-                }
 
                 if (isScanning) {
                     return@withContext
                 }
 
                 isScanning = true
-                // Android does not document it but we need to not BLE scans too often, so lets wait a bit
-                // if we've started one recently.
-                // See https://android-review.googlesource.com/c/platform/packages/apps/Bluetooth/+/215844/15/src/com/android/bluetooth/gatt/AppScanStats.java#63
-                var now = System.currentTimeMillis()
 
-                // 5 second buffer on top of researched 30 because maybe it helps. we're at the whims of AOSP here.
-                // if this still fails in the future, it would be better to have a retry mechanism
-                val window = 35_000L
-                if (lastNScans.size == 5) {
-                    val earliestScan = lastNScans.first()
-                    val timeToDelay = max(window - (now - earliestScan), 0)
-                    if (timeToDelay != 0L) {
-                        Log.d(
-                            TAG,
-                            "last ble scan too recent. waiting based on earliest scan: ${timeToDelay / 1000}s",
-                        )
-                        // Note: right now this can cause a delay in locking on the stop side.
-                        delay(timeToDelay)
-                    }
-
-                    // trim up to first that is still in window
-                    now = System.currentTimeMillis()
-                    lastNScans =
-                        lastNScans
-                            .filter {
-                                max(window - (now - it), 0) > 0
-                            }.toMutableList()
-                }
-                lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
                 btMan.adapter.bluetoothLeScanner.startScan(
                     serviceIds.map {
