@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
+import java.util.concurrent.TimeoutException
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
 
@@ -50,12 +51,59 @@ class CentralManager(
     private var isScanning = false
     private var lastNScans = mutableListOf<Long>()
     private val scanMutex = Mutex()
+    private val excludeFromScan = mutableSetOf<String>()
 
     @Throws(SecurityException::class)
     suspend fun scanForPeripherals(serviceIds: List<String> = listOf()) {
         mustBePoweredOn()
         withContext(Dispatchers.IO) {
             scanMutex.withLock {
+                // Android excludes bonded devices from showing up in advertisements. So we need
+                // to connect to it in order to check out its services. We'll disconnect if it's
+                // of no use to us.
+                excludeFromScan.clear()
+                btMan.adapter.bondedDevices.forEach { device ->
+                    excludeFromScan.add(device.address)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        for (i in 1..3) {
+                            try {
+                                Log.d(
+                                    TAG,
+                                    "connecting to bonded device ${device.name} ${device.address} to see if it has desired service(s)",
+                                )
+                                val connectedDevice = connectToDevice(device.address)
+                                val connectedDeviceServiceIds = connectedDevice.map { it["id"] as String }
+                                if (connectedDeviceServiceIds.intersect(serviceIds.map(String::lowercase).toSet()).isNotEmpty()) {
+                                    Log.d(TAG, "bonded device ${device.name} ${device.address} contains a desired service id")
+                                    _scanForPeripheralFlow.emit(
+                                        Result.success(
+                                            hashMapOf(
+                                                "id" to device.address,
+                                                "name" to device.name,
+                                                "service_ids" to device.uuids?.map { toString() },
+                                            ),
+                                        ),
+                                    )
+                                    break
+                                } else {
+                                    Log.d(TAG, "bonded device ${device.name} ${device.address} is not useful to us")
+                                    disconnectFromDevice(device.address)
+                                }
+                            } catch (e: Throwable) {
+                                when(e) {
+                                    // time outs can be caused by a multitude of reasons, including if the bonded device is off.
+                                    // for that reason, only report stack traces if the exception is not a time out.
+                                    is TimeoutException -> {
+                                        Log.d(TAG, "timed out trying to connect to bonded device ${device.name} ${device.address}")
+                                    }
+                                    else -> Log.d(TAG, "failed to connect to bonded device ${device.name} ${device.address}", e)
+                                }
+                            }
+                            delay(5000)
+                        }
+                    }
+                }
+
                 if (isScanning) {
                     return@withContext
                 }
@@ -91,27 +139,16 @@ class CentralManager(
                 }
                 lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
-                try {
-                    btMan.adapter.bluetoothLeScanner.startScan(
-                        if (serviceIds.isEmpty()) null else serviceIds.map {
-                                ScanFilter
-                                    .Builder()
-                                    .setServiceUuid(ParcelUuid.fromString(it))
-                                    .build()
-                            },
-                        ScanSettings.Builder()
-                            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-                            .setReportDelay(0)
-                            .build(),
-                        leScanCallback
-                    )
-                } catch (e: Exception) {
-                    isScanning = false
-                    Log.e(TAG, "Failed to start BLE scan", e)
-                    throw e
-                }
-                Log.d(TAG, "BLE scan started successfully")
+                btMan.adapter.bluetoothLeScanner.startScan(
+                    serviceIds.map {
+                        ScanFilter
+                            .Builder()
+                            .setServiceUuid(ParcelUuid.fromString(it))
+                            .build()
+                    },
+                    ScanSettings.Builder().build(),
+                    leScanCallback,
+                )
             }
         }
     }
@@ -195,37 +232,27 @@ class CentralManager(
                 result: ScanResult,
             ) {
                 super.onScanResult(callbackType, result)
-                Log.d(TAG, "onScanResult: device=${result.device?.address} name=${result.device?.name}")
                 CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        _scanForPeripheralFlow.emit(
-                            Result.success(
-                                hashMapOf(
-                                    "id" to result.device.address,
-                                    "name" to (result.device.name ?: "Unknown"),
-                                    "service_ids" to (result.device.uuids?.map { it.toString() } ?: emptyList()),
-                                ),
-                            ),
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error emitting scan result", e)
-                        _scanForPeripheralFlow.emit(Result.failure(e))
+                    scanMutex.withLock {
+                        if (excludeFromScan.contains(result.device.address)) {
+                            return@launch
+                        }
                     }
+                    _scanForPeripheralFlow.emit(
+                        Result.success(
+                            hashMapOf(
+                                "id" to result.device.address,
+                                "name" to result.device.name,
+                                "service_ids" to result.device.uuids?.map { toString() },
+                            ),
+                        ),
+                    )
                 }
-            }
-
-            override fun onBatchScanResults(results: List<ScanResult>) {
-                super.onBatchScanResults(results)
-                Log.d(TAG, "onBatchScanResults: ${results.size} results")
-                results.forEach { onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, it) }
             }
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "onScanFailed $errorCode")
                 CoroutineScope(Dispatchers.IO).launch {
-                    scanMutex.withLock {
-                        isScanning = false
-                    }
                     _scanForPeripheralFlow.emit(Result.failure(Exception("scan failed: $errorCode")))
                 }
             }
