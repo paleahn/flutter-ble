@@ -32,6 +32,9 @@ class Peripheral(
     private val device: BluetoothDevice = btMan.adapter.getRemoteDevice(macAddress)
     private var channels: MutableMap<Int, L2CAPChannelManager> = mutableMapOf()
     private val channelsMutex = Mutex()
+    
+    @Volatile
+    private var currentContext: Context? = null
 
     @Volatile
     private var isClosed = false
@@ -193,6 +196,11 @@ class Peripheral(
                 } else {
                     disconnected = true
                     val exceptionStr = "failed to connect to device: ${device.name} ${device.address} with GATT status: $status state: $newState"
+                    
+                    // Critical: Close GATT immediately on connection failure to prevent status 133 on next attempt
+                    gatt?.close()
+                    this@Peripheral.gatt = null
+                    
                     // 147 corresponds to GATT_CONNECTION_TIMEOUT but that constant was only introduced in API level 35, so doing a straight
                     // comparison instead.
                     if (status == 147) {

@@ -114,12 +114,9 @@ class CentralManager(
                 }
             }
             val periph = Peripheral(btMan, macAddress)
-            peripheralsMutex.withLock {
-                peripherals[macAddress] = periph
-            }
             try {
                 suspendCancellableCoroutine { cont: CancellableContinuation<Unit> ->
-                    CoroutineScope(Dispatchers.Main).launch {
+                    CoroutineScope(Dispatchers.IO).launch {
                         val contextStrong = context.get()
                         if (contextStrong == null) {
                             cont.resumeWithException(Exception("application context no longer available"))
@@ -128,10 +125,13 @@ class CentralManager(
                         periph.connect(contextStrong, cont)
                     }
                 }
-            } catch (e: Throwable) {
+                // Only add to map after successful connection
                 peripheralsMutex.withLock {
-                    peripherals.remove(macAddress)
+                    peripherals[macAddress] = periph
                 }
+            } catch (e: Throwable) {
+                // Ensure peripheral is cleaned up on connection failure
+                periph.close()
                 throw e
             }
             return@withContext periph.discoveredServices
