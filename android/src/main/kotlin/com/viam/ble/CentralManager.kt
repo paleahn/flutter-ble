@@ -92,26 +92,22 @@ class CentralManager(
                 lastNScans.add(now)
                 Log.d(TAG, "requesting scan of $serviceIds")
                 try {
-                    if (serviceIds.isEmpty()) {
-                        btMan.adapter.bluetoothLeScanner.startScan(
-                            leScanCallback,
-                        )
-                    } else {
-                        btMan.adapter.bluetoothLeScanner.startScan(
-                            serviceIds.map {
+                    private val mainHandler = Handler(Looper.getMainLooper())
+                    scanner.startScan(
+                        if (serviceIds.isEmpty()) null else serviceIds.map {
                                 ScanFilter
                                     .Builder()
                                     .setServiceUuid(ParcelUuid.fromString(it))
                                     .build()
                             },
-                            ScanSettings.Builder()
-                                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                                .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-                                .setReportDelay(0)
-                                .build(),
-                            leScanCallback,
-                        )
-                    }
+                        ScanSettings.Builder()
+                            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                            .setReportDelay(0)
+                            .build(),
+                        leScanCallback,
+                        mainHandler
+                    )
                 } catch (e: Exception) {
                     isScanning = false
                     Log.e(TAG, "Failed to start BLE scan", e)
